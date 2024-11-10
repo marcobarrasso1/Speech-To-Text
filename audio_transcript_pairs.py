@@ -11,6 +11,7 @@ def get_audio_transcript_pair(root_directory, max_duration, sr):
             # Loop through the second level of subdirectories
             for sub_subdir in os.listdir(main_subdir_path):
                 sub_subdir_path = os.path.join(main_subdir_path, sub_subdir)
+                print(sub_subdir_path)
                 if os.path.isdir(sub_subdir_path):
 
                     transcript_file = [f for f in os.listdir(sub_subdir_path) if f.endswith('.trans.txt')]
@@ -33,6 +34,7 @@ def get_audio_transcript_pair(root_directory, max_duration, sr):
     return data
 
 root_dir = "data/LibriSpeech/train-clean-100"
-data = get_audio_transcript_pair(root_dir, 15, 16000)                         
+data = get_audio_transcript_pair(root_dir, 15, 16000)                        
+print(len(data))
 with open('data/audio_transcript_pairs.pkl', 'wb') as f:
     pickle.dump(data, f)  

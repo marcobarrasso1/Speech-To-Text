@@ -9,5 +9,5 @@ class config():
     n_text_head = 8
     vocab_size = 50304
     sr = 16000
-    batch_size = 1
+    batch_size = 56
     epochs = 5

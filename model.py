@@ -175,6 +175,7 @@ class Transformer(nn.Module):
 
         self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
         
+        
     def get_pad_mask(self, seq):
         pad_token_id = 50259
         return (seq != pad_token_id)
@@ -182,17 +183,15 @@ class Transformer(nn.Module):
     def forward(self, enc_input, dec_input):
         enc_out = self.encoder(enc_input)
         
-        
-        mask = self.get_pad_mask(dec_input)
+        dec_copy = dec_input
+        mask = self.get_pad_mask(dec_copy)
         dec_mask = mask.unsqueeze(-2) & mask.unsqueeze(-1)
         dec_mask = dec_mask.unsqueeze(1)
         dec_mask = dec_mask & self.bias
         
-        print(dec_mask)
-        _ = torch.ones(enc_input.shape[0], enc_out.shape[1], dtype=torch.bool)
-        cross_mask = (mask.unsqueeze(-1) & _).unsqueeze(1)
-        print(cross_mask)
-    
+        _ = torch.ones(enc_input.shape[0], enc_out.shape[1], dtype=torch.bool,  device=enc_input.device)
+
+        cross_mask = (mask.unsqueeze(-1) & _.unsqueeze(-2)).unsqueeze(1)
         
         return self.decoder(x=dec_input, enc_out=enc_out, self_mask=dec_mask, cross_mask=cross_mask)
         

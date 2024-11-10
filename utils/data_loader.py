@@ -41,7 +41,10 @@ class SpeechToTextDataset(Dataset):
         if log_mel_spectrogram.shape[1] < self.n_audio_ctx:
             padding = self.n_audio_ctx - log_mel_spectrogram.shape[1]
             log_mel_spectrogram = np.pad(log_mel_spectrogram, ((0, 0), (0, padding)), mode='constant', constant_values=0)
-            
+        
+        if log_mel_spectrogram.shape[1] > self.n_audio_ctx:
+                        log_mel_spectrogram = log_mel_spectrogram[:, :self.n_audio_ctx]
+
         encoded_transcript = self.enc.encode(transcript)
         encoder_input = torch.tensor(log_mel_spectrogram, dtype=torch.float32)
         decoder_input = [self.sot_id] + encoded_transcript + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript))

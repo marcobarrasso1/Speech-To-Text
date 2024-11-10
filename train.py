@@ -7,6 +7,7 @@ from config import config
 from utils.tokenizer import custom_encoding
 from model import Transformer
 import torch.nn.functional as F
+import time 
 
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -22,16 +23,16 @@ enc = custom_encoding()
 
 with open('data/audio_transcript_pairs.pkl', 'rb') as f:
     pairs = pickle.load(f)
-    
+
+print(len(pairs))
 data_loader_train, data_loader_val = create_data_loader(pairs, config, enc)
 
-print(len(data_loader_train))
+print(len(data_loader_train), len(data_loader_val))
 #print(next(iter(data_loader_train)))
-#torch.set_float32_matmul_precision('high') 
-len(data_loader_train)
+torch.set_float32_matmul_precision('high') 
 model = Transformer(config)
 model.to(device)
-#model = torch.compile(model)
+model = torch.compile(model)
 
 print(sum(p.numel() for p in model.parameters())/1e6, "M parameters") 
 
@@ -55,6 +56,8 @@ for epoch in range(config.epochs):
     epoch_loss = []
     for i, batch in enumerate(data_loader_train):
         
+        start_time = time.time()
+
         enc_input, dec_input, target = batch
         enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
         
@@ -73,7 +76,11 @@ for epoch in range(config.epochs):
         
         epoch_loss.append(loss)
         
-        print(f"epoch: {epoch+1}, batch: {i+1}, loss: {loss}")
+        torch.cuda.synchronize()
+        end_time = time.time()
+        batch_time = end_time - start_time
+
+        print(f"epoch: {epoch+1}, batch: {i+1}, loss: {loss}, time: {batch_time:.4f} seconds")
         
         
         
