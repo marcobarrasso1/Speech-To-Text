@@ -183,8 +183,7 @@ class Transformer(nn.Module):
     def forward(self, enc_input, dec_input):
         enc_out = self.encoder(enc_input)
         
-        dec_copy = dec_input
-        mask = self.get_pad_mask(dec_copy)
+        mask = self.get_pad_mask(dec_input)
         dec_mask = mask.unsqueeze(-2) & mask.unsqueeze(-1)
         dec_mask = dec_mask.unsqueeze(1)
         dec_mask = dec_mask & self.bias
