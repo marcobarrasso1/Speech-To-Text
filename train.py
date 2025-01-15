@@ -63,7 +63,7 @@ for epoch in range(config.epochs):
             val_loss = 0
             
             for val_batch in data_loader_val:
-                enc_input, dec_input = val_batch
+                enc_input, dec_input, target = val_batch
                 enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
                 
                 logits = model(enc_input, dec_input)
