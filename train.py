@@ -28,7 +28,7 @@ print(len(pairs))
 data_loader_train, data_loader_val = create_data_loader(pairs, config, enc)
 
 print(len(data_loader_train), len(data_loader_val))
-#print(next(iter(data_loader_train)))
+
 torch.set_float32_matmul_precision('high') 
 model = Transformer(config)
 model.to(device)
@@ -51,10 +51,34 @@ def lr_lambda(current_step):
 
 scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-model.train()
 for epoch in range(config.epochs):
-    epoch_loss = []
+    train_losses = []
+    val_losses = []
+    train_loss = 0
+    
     for i, batch in enumerate(data_loader_train):
+        
+        if i % 50 == 0:
+            model.eval()
+            val_loss = 0
+            
+            for val_batch in data_loader_val:
+                enc_input, dec_input = val_batch
+                enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
+                
+                logits = model(enc_input, dec_input)
+                B, T, C = logits.shape
+                
+                logits = logits.view(B * T, C)
+                target = target.view(B * T)
+
+                loss = F.cross_entropy(logits, target, ignore_index=50259)
+                val_loss += loss.item()
+                
+            val_losses.append(val_loss.item())
+            print(f"batch {i+1} | Validation loss {val_loss}")
+        
+        model.train()
         
         start_time = time.time()
 
@@ -74,13 +98,28 @@ for epoch in range(config.epochs):
         optimizer.step()
         scheduler.step()
         
-        epoch_loss.append(loss)
+        train_losses.append(loss.item())
         
         torch.cuda.synchronize()
         end_time = time.time()
         batch_time = end_time - start_time
 
-        print(f"epoch: {epoch+1}, batch: {i+1}, loss: {loss}, time: {batch_time:.4f} seconds")
+        print(f"batch: {i+1}, loss: {loss}, time: {batch_time:.4f} seconds")
+        
+        if i % 100 == 0:
+            model_path = f"weights/model_weights_iter_{iter}.pth"
+            torch.save(model.state_dict(), model_path)
+            print(f"Model weights saved to {model_path}")
+        
+        
+with open('train_loss.txt', 'w') as file:
+    for item in train_losses:
+        file.write(f"{item}\n")
+        
+        
+with open('val_loss.txt', 'w') as file:
+    for item in val_losses:
+        file.write(f"{item}\n")
         
         
         

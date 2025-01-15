@@ -50,7 +50,6 @@ class SpeechToTextDataset(Dataset):
         decoder_input = [self.sot_id] + encoded_transcript + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript))
         target = encoded_transcript + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript)) + [self.eot_id]
         
-        encoder_input = torch.tensor(encoder_input, dtype=torch.float32)
         decoder_input = torch.tensor(decoder_input, dtype=torch.long)
         target = torch.tensor(target, dtype=torch.long)
         
