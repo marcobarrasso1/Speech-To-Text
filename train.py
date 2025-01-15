@@ -75,7 +75,7 @@ for epoch in range(config.epochs):
                 loss = F.cross_entropy(logits, target, ignore_index=50259)
                 val_loss += loss.item()
                 
-            val_losses.append(val_loss.item())
+            val_losses.append(val_loss)
             print(f"batch {i+1} | Validation loss {val_loss}")
         
         model.train()
