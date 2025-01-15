@@ -39,7 +39,7 @@ class MultiHeadAttention(nn.Module):
         self.value = nn.Linear(n_embd, n_embd)
         self.out = nn.Linear(n_embd, n_embd)
         
-    def forward(self, k, q, v, cross=False, mask=None):
+    def forward(self, k, q, v, cross=False):
         B, T, C = k.shape
         
         if cross:
@@ -56,7 +56,7 @@ class MultiHeadAttention(nn.Module):
         q = q.view(B, Tq, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, query_size, head_size)
         v = v.view(B, Tk, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, value_size, head_size)
         
-        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask) #(B, nh, T, hs)
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True if cross else False) #(B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, Tq, C) # (B, T, n_embd)
         
         y = self.out(y)
@@ -79,17 +79,16 @@ class AttentionBlock(nn.Module):
         self.mlp = MLP(n_embd)
         self.ln3 = nn.LayerNorm(n_embd)
         
-    def forward(self, k, q, v, self_pad_mask=None, cross_mask=None, enc=False):
+    def forward(self, k, q, v):
         x = self.ln1(q)
-        x = x + self.attn(q=x, k=x, v=x, cross=enc, mask=self_pad_mask)
+        x = x + self.attn(q=x, k=x, v=x, cross=self.cross)
         
         if self.cross:
             x = x + self.cross_att(
             q=self.ln2(x), 
-            k=self.ln1(k), 
-            v=self.ln1(v), 
-            cross=True,
-            mask=cross_mask
+            k=self.ln2(k), 
+            v=self.ln2(v), 
+            cross=True
             )
             
         x = x + self.mlp(self.ln3(x))   
@@ -118,7 +117,7 @@ class Encoder(nn.Module):
         x = (x + self.positional_embedding).to(x.dtype)
         
         for block in self.blocks:
-            x = block(k=x, q=x, v=x, enc=True)
+            x = block(k=x, q=x, v=x)
             
         x = self.ln(x)
         
@@ -136,13 +135,13 @@ class Decoder(nn.Module):
         
         self.ln = nn.LayerNorm(n_embd)
         
-    def forward(self, x, enc_out, self_mask, cross_mask):
+    def forward(self, x, enc_out):
         n_ctx = x.shape[1]
         
         x = self.token_embedding(x) + self.postitional_embedding[:n_ctx]
         
         for block in self.blocks:
-            x = block(q=x, k=enc_out, v=enc_out, self_pad_mask=self_mask, cross_mask=cross_mask, enc=False)
+            x = block(q=x, k=enc_out, v=enc_out)
             
         x = self.ln(x)
         
@@ -173,26 +172,13 @@ class Transformer(nn.Module):
             n_head=config.n_text_head,
         )
 
-        self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
+        #self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
         
-        
-    def get_pad_mask(self, seq):
-        pad_token_id = 50259
-        return (seq != pad_token_id)
         
     def forward(self, enc_input, dec_input):
         enc_out = self.encoder(enc_input)
         
-        mask = self.get_pad_mask(dec_input)
-        dec_mask = mask.unsqueeze(-2) & mask.unsqueeze(-1)
-        dec_mask = dec_mask.unsqueeze(1)
-        dec_mask = dec_mask & self.bias
-        
-        _ = torch.ones(enc_input.shape[0], enc_out.shape[1], dtype=torch.bool,  device=enc_input.device)
-
-        cross_mask = (mask.unsqueeze(-1) & _.unsqueeze(-2)).unsqueeze(1)
-        
-        return self.decoder(x=dec_input, enc_out=enc_out, self_mask=dec_mask, cross_mask=cross_mask)
+        return self.decoder(x=dec_input, enc_out=enc_out)
         
         
         
