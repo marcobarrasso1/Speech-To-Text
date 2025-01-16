@@ -178,7 +178,7 @@ class Transformer(nn.Module):
             n_head=config.n_text_head,
         )
 
-        #self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
+        self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
         
         
     def forward(self, enc_input, dec_input):
@@ -197,13 +197,15 @@ class Transformer(nn.Module):
     def beam_search(self, max_length, k, enc_in, device):
         self.eval()
 
-        enc_out = self.encoder(enc_in)
+        enc_out = self.encoder(enc_in) #.repeat(k, 1, 1)
 
         eos = 50258
         sos = 50257
         pad = 50259
 
-        beam = [(torch.tensor([sos], device=device), 0)]
+        beam = [(torch.tensor([sos], device=device), 0) for _ in range(k)]
+        for seq, score in beam:
+            print(seq, score)
 
         for _ in range(max_length):
 
@@ -214,23 +216,29 @@ class Transformer(nn.Module):
             ).to(device)
 
             print(batch_seqs.shape)
-            print(batch_seqs)
+
             logits = self.get_logits(batch_seqs, enc_out)  # Shape: (num_beams, vocab_size)
-            logits = F.softmax(logits, dim=-1)
+            log_p = F.log_softmax(logits, dim=-1)
+            print(logits)
+            print(log_p)
 
             candidates = []
             for i, (seq, score) in enumerate(beam):
-                seq_logits = logits[i]
-                topk_probs, topk_idx = torch.topk(seq_logits, k, dim=-1)
+                seq_logp = log_p[i]
+                topk_probs, topk_idx = torch.topk(seq_logp, k, dim=-1)
 
                 for j in range(k):
                     ix = topk_idx[j].unsqueeze(0)
-                    p = topk_probs[j].item()
-                    new_score = score + torch.log(torch.tensor(p)).item() / (len(seq) + 1)
+                    logp = topk_probs[j].item()
+                    n = seq.size(0)
+                    new_score = (score * (n - 1) / n) + (logp / n)
                     candidates.append((torch.cat((seq, ix)), new_score))
 
             candidates = sorted(candidates, key=lambda x: x[1], reverse=True)[:k]
             beam = candidates
+
+            for seq, score in beam:
+                print(seq, score)
 
             if all(seq[-1] == eos for seq, _ in beam):
                 break
