@@ -147,7 +147,7 @@ class Decoder(nn.Module):
         
         if inference:
             logits = (
-                x[:, [-1], :] @ torch.transpose(self.token_embedding.weight.to(x.dtype), 0, 1)
+                x[:, -1, :] @ torch.transpose(self.token_embedding.weight.to(x.dtype), 0, 1)
             ).float()
             
         else:
@@ -192,29 +192,51 @@ class Transformer(nn.Module):
     def get_enc_out(self, enc_input):
         return self.encoder(x=enc_input)
 
+
     @torch.no_grad()
-    def beam_search(model, max_length, k, enc_input):
-        model.eval()
+    def beam_search(self, max_length, k, enc_in, device):
+        self.eval()
+
+        enc_out = self.encoder(enc_in)
+
         eos = 50258
         sos = 50257
-        beam = [(sos, 0)]
+        pad = 50259
+
+        beam = [(torch.tensor([sos], device=device), 0)]
+
         for _ in range(max_length):
+
+            all_seqs = [seq for seq, _ in beam]
+
+            batch_seqs = torch.nn.utils.rnn.pad_sequence(
+                all_seqs, batch_first=True, padding_value=pad
+            ).to(device)
+
+            print(batch_seqs.shape)
+            print(batch_seqs)
+            logits = self.get_logits(batch_seqs, enc_out)  # Shape: (num_beams, vocab_size)
+            logits = F.softmax(logits, dim=-1)
+
             candidates = []
-            for seq, score in beam:
-                if seq[0][-1] == eos:
-                    candidates.append((seq, score))
-                    continue
-                logits = model(seq, enc_input)
-                logits = F.softmax(logits, dim=-1)
-                topk_probs, topk_idx = torch.topk(logits, k, dim=-1)
-                for i in range(k):
-                    ix = topk_idx[:, i].unsqueeze(0)
-                    p = topk_probs[:, i].unsqueeze(0)
-                    candidates.append((torch.cat((seq, ix), dim=1), score + torch.log(p).item() / seq.size(1)))
-            candidates = list(set(candidates))
-            candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
-            beam = candidates[:k]
+            for i, (seq, score) in enumerate(beam):
+                seq_logits = logits[i]
+                topk_probs, topk_idx = torch.topk(seq_logits, k, dim=-1)
+
+                for j in range(k):
+                    ix = topk_idx[j].unsqueeze(0)
+                    p = topk_probs[j].item()
+                    new_score = score + torch.log(torch.tensor(p)).item() / (len(seq) + 1)
+                    candidates.append((torch.cat((seq, ix)), new_score))
+
+            candidates = sorted(candidates, key=lambda x: x[1], reverse=True)[:k]
+            beam = candidates
+
+            if all(seq[-1] == eos for seq, _ in beam):
+                break
+
         return beam
+
         
         
         
