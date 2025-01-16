@@ -188,7 +188,30 @@ class Transformer(nn.Module):
     
     def get_logits(self, dec_input, enc_out):
         return self.decoder(x=dec_input, enc_out=enc_out, inference=True)
-        
+
+    @torch.no_grad()
+    def beam_search(model, max_length, k, enc_input):
+        model.eval()
+        eos = 50258
+        sos = 50257
+        beam = [(sos, 0)]
+        for _ in range(max_length):
+            candidates = []
+            for seq, score in beam:
+                if seq[0][-1] == eos:
+                    candidates.append((seq, score))
+                    continue
+                logits = model(seq, enc_input)
+                logits = F.softmax(logits, dim=-1)
+                topk_probs, topk_idx = torch.topk(logits, k, dim=-1)
+                for i in range(k):
+                    ix = topk_idx[:, i].unsqueeze(0)
+                    p = topk_probs[:, i].unsqueeze(0)
+                    candidates.append((torch.cat((seq, ix), dim=1), score + torch.log(p).item() / seq.size(1)))
+            candidates = list(set(candidates))
+            candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
+            beam = candidates[:k]
+        return beam
         
         
         
