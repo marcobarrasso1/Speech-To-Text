@@ -188,6 +188,9 @@ class Transformer(nn.Module):
     
     def get_logits(self, dec_input, enc_out):
         return self.decoder(x=dec_input, enc_out=enc_out, inference=True)
+    
+    def get_enc_out(self, enc_input):
+        return self.encoder(x=enc_input)
 
     @torch.no_grad()
     def beam_search(model, max_length, k, enc_input):
