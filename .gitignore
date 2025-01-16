@@ -1,2 +1,3 @@
 data/LibriSpeech
 train-clean-100.tar.gz
+venv/
