@@ -57,7 +57,7 @@ class MultiHeadAttention(nn.Module):
         v = v.view(B, Tk, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, value_size, head_size)
         
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True if cross else False) #(B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, Tq, C) # (B, T, n_embd)
+        y = y.transpose(1, 2).contiguous().view(B, Tq, C) # (B, query_size, n_embd)
         
         y = self.out(y)
 
@@ -135,7 +135,7 @@ class Decoder(nn.Module):
         
         self.ln = nn.LayerNorm(n_embd)
         
-    def forward(self, x, enc_out):
+    def forward(self, x, enc_out, inference=False):
         n_ctx = x.shape[1]
         
         x = self.token_embedding(x) + self.postitional_embedding[:n_ctx]
@@ -145,9 +145,15 @@ class Decoder(nn.Module):
             
         x = self.ln(x)
         
-        logits = (
-            x @ torch.transpose(self.token_embedding.weight.to(x.dtype), 0, 1)
-        ).float()
+        if inference:
+            logits = (
+                x[:, [-1], :] @ torch.transpose(self.token_embedding.weight.to(x.dtype), 0, 1)
+            ).float()
+            
+        else:
+            logits = (
+                x @ torch.transpose(self.token_embedding.weight.to(x.dtype), 0, 1)
+            ).float()
         
         return logits
     
@@ -179,6 +185,9 @@ class Transformer(nn.Module):
         enc_out = self.encoder(enc_input)
         
         return self.decoder(x=dec_input, enc_out=enc_out)
+    
+    def get_logits(self, dec_input, enc_out):
+        return self.decoder(x=dec_input, enc_out=enc_out, inference=True)
         
         
         

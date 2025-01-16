@@ -60,7 +60,7 @@ def create_data_loader(data, config, enc):
     train, val = train_test_split(data, test_size=0.1, random_state=48)
     dataset_train = SpeechToTextDataset(train, enc, config.n_text_ctx, config.sr, config.n_mels, config.n_audio_ctx)
     dataset_val = SpeechToTextDataset(val, enc, config.n_text_ctx, config.sr, config.n_mels, config.n_audio_ctx)
-    len(data)
+    
     
     data_loader_train = DataLoader(dataset_train, batch_size=config.batch_size, shuffle=True)
     data_loader_val = DataLoader(dataset_val, batch_size=config.batch_size, shuffle=True)

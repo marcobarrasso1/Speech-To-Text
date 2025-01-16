@@ -108,7 +108,7 @@ for epoch in range(config.epochs):
         print(f"batch: {i+1}, loss: {loss}, time: {batch_time:.4f} seconds")
         
         if i % 100 == 0:
-            model_path = f"weights/model_weights_iter_{iter}.pth"
+            model_path = f"weights/model_weights_iter_{i}.pth"
             torch.save(model.state_dict(), model_path)
             print(f"Model weights saved to {model_path}")
         
