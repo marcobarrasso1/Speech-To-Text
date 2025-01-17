@@ -197,7 +197,8 @@ class Transformer(nn.Module):
     def beam_search(self, max_length, k, enc_in, device):
         self.eval()
 
-        enc_out = self.encoder(enc_in) #.repeat(k, 1, 1)
+        enc_out = self.encoder(enc_in).repeat(k, 1, 1)
+        print(enc_out.shape)
 
         eos = 50258
         sos = 50257
@@ -244,6 +245,34 @@ class Transformer(nn.Module):
                 break
 
         return beam
+    
+    
+    def GreedyDecoding(self, max_length, enc_in, device):
+        self.eval()
+        
+        eos = 50258
+        sos = 50257
+        enc_out = self.encoder(enc_in)
+        
+        transcription = [sos]
+        
+        for i in range(max_length):
+            
+            _ = torch.tensor([transcription], device=device)
+            logits = self.get_logits(_, enc_out)
+            probs = F.softmax(logits, dim=-1)
+            prediction = torch.argmax(probs, dim=-1)
+            
+            print(prediction.item())
+            
+            transcription.append(prediction)
+            
+            if prediction.item() == eos:
+                break
+        
+        return transcription[1:]
+            
+            
 
         
         
