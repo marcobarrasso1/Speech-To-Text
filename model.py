@@ -177,13 +177,19 @@ class Transformer(nn.Module):
             n_embd=config.n_text_embd,
             n_head=config.n_text_head,
         )
-
-        self.register_buffer("bias", (torch.tril(torch.ones(config.n_text_ctx, config.n_text_ctx)).view(1, 1, config.n_text_ctx, config.n_text_ctx).bool()))
         
+        self.initialize_weights(self.encoder)
+        self.initialize_weights(self.decoder)
+        
+        
+    def initialize_weights(self, m):
+        if isinstance(m, nn.Linear):  # Apply only to linear layers
+            nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')  # Fan-in with ReLU
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
         
     def forward(self, enc_input, dec_input):
         enc_out = self.encoder(enc_input)
-        
         return self.decoder(x=dec_input, enc_out=enc_out)
     
     def get_logits(self, dec_input, enc_out):
@@ -252,25 +258,30 @@ class Transformer(nn.Module):
         
         eos = 50258
         sos = 50257
+        
+        if enc_in.shape[0] != 1:
+            random_index = torch.randint(0, enc_in.size(0), (1,)).item()
+            enc_in = enc_in[random_index].unsqueeze(0)
+            
         enc_out = self.encoder(enc_in)
         
         transcription = [sos]
+        prod = 1
         
         for i in range(max_length):
-            
             _ = torch.tensor([transcription], device=device)
             logits = self.get_logits(_, enc_out)
             probs = F.softmax(logits, dim=-1)
-            prediction = torch.argmax(probs, dim=-1)
+            p, prediction= torch.max(probs, dim=-1)
+            prod *= p 
+            #prediction = torch.argmax(probs, dim=-1)
             
-            print(prediction.item())
-            
-            transcription.append(prediction)
+            transcription.append(prediction.item())
             
             if prediction.item() == eos:
                 break
         
-        return transcription[1:]
+        return transcription[1:], (1 / p) ** (1 / len(transcription) - 1)
             
             
 
