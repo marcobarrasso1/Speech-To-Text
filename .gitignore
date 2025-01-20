@@ -1,5 +1,0 @@
-data/LibriSpeech
-venv/
-weights
-train_loss.txt
-val_loss.txt
