@@ -1,5 +1,0 @@
-torch
-tiktoken
-librosa
-numpy
-jiwer
