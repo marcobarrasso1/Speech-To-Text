@@ -1,0 +1,10 @@
+Using device CUDA
+('data/LibriSpeech/train-clean-100/405/130894/405-130894-0022.flac', 'after twelve hours had gone by we had removed from the outlined surface area a slice of ice only one meter thick hence about six hundred cubic meters assuming the same work would be accomplished every twelve hours')
+20336
+572 64
+model paramaters loaded correctly
+70.87104 M parameters
+[392, 262, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 584, 50258] tensor([0.0353], device='cuda:0', grad_fn=<PowBackward0>)
+Model weights saved to weights/model_weights_iter_0.pth
+[392, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 284, 262, 50258] tensor([0.0194], device='cuda:0', grad_fn=<PowBackward0>)
+Model weights saved to weights/model_weights_iter_100.pth
