@@ -1,8 +1,10 @@
 import librosa
 import numpy as np
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
 import torch
 from sklearn.model_selection import train_test_split
+
+
 
 
 class SpeechToTextDataset(Dataset):
@@ -64,8 +66,8 @@ def create_data_loader(data, config, enc, ddp=False, ddp_world_size=None, ddp_ra
     if ddp:
         train_sampler = DistributedSampler(dataset_train, num_replicas=ddp_world_size, rank=ddp_rank)
         val_sampler = DistributedSampler(dataset_val, num_replicas=ddp_world_size, rank=ddp_rank)
-        data_loader_train = DataLoader(dataset_train, batch_size=Config.batch_size // ddp_world_size, sampler=train_sampler)
-        data_loader_val = DataLoader(dataset_val, batch_size=Config.batch_size // ddp_world_size, sampler=val_sampler)
+        data_loader_train = DataLoader(dataset_train, batch_size=config.batch_size // ddp_world_size, sampler=train_sampler)
+        data_loader_val = DataLoader(dataset_val, batch_size=config.batch_size // ddp_world_size, sampler=val_sampler)
     else:
         data_loader_train = DataLoader(dataset_train, batch_size=config.batch_size, shuffle=True)
         data_loader_val = DataLoader(dataset_val, batch_size=config.batch_size, shuffle=True)

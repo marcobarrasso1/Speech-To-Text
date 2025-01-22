@@ -1,4 +1,4 @@
-data/LibriSpeech
+data/LibriSpeech/
 venv/
 weights/
 train_loss.txt
@@ -6,3 +6,4 @@ val_loss.txt
 err.err
 out.txt
 run.sh
+results/
