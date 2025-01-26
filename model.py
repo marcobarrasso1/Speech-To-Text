@@ -1,6 +1,7 @@
 import torch 
 import torch.nn as nn
 from torch.nn import functional as F
+from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
 
 
@@ -97,24 +98,27 @@ class AttentionBlock(nn.Module):
     
 
 class Encoder(nn.Module):
-    def __init__(self, n_mels, n_ctx, n_layer, n_embd, n_head):
+    def __init__(self, n_mels, n_layer, n_embd, n_head, device):
         super().__init__()
+
+        self.device=device
         
         self.conv1 = nn.Conv1d(n_mels, n_embd, kernel_size=3, padding=1, bias=False)
         self.conv2 = nn.Conv1d(n_embd, n_embd, kernel_size=3, padding=1, bias=False)
-        self.register_buffer("positional_embedding", sinusoids(n_ctx, n_embd))
+
         
         self.blocks = nn.ModuleList(AttentionBlock(n_embd, n_head, cross=False) for _ in range (n_layer))
         
         self.ln = nn.LayerNorm(n_embd)
         
     def forward(self, x):
-        #x shape: (batch_size, n_mels, n_ctx)
+        x = x.permute(0, 2, 1) #x shape: (batch_size, n_mels, n_ctx)
         x = F.gelu(self.conv1(x)) #(batch_size, n_embd, n_ctx)
         x = F.gelu(self.conv2(x)) #(batch_size, n_embd, n_ctx)
         x = x.permute(0, 2, 1) #(batch_size, n_ctx, n_embd)
         
-        x = (x + self.positional_embedding).to(x.dtype)
+        B, N, D = x.shape
+        x = (x + sinusoids(N, D).to(self.device).unsqueeze(0)).to(x.dtype)
         
         for block in self.blocks:
             x = block(k=x, q=x, v=x)
@@ -159,15 +163,17 @@ class Decoder(nn.Module):
     
 
 class Transformer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, device):
         super().__init__()
+
+        self.device = device
         
         self.encoder = Encoder(
             n_mels=config.n_mels,
-            n_ctx=config.n_audio_ctx,
             n_layer=config.n_audio_layer,
             n_embd=config.n_audio_embd,
             n_head=config.n_audio_head,
+            device=device
         )
         
         self.decoder = Decoder(
@@ -175,7 +181,7 @@ class Transformer(nn.Module):
             n_ctx=config.n_text_ctx,
             n_layer=config.n_text_layer,
             n_embd=config.n_text_embd,
-            n_head=config.n_text_head,
+            n_head=config.n_text_head
         )
         
         self.initialize_weights(self.encoder)
@@ -252,7 +258,7 @@ class Transformer(nn.Module):
 
         return beam
     
-    
+    @torch.no_grad() 
     def GreedyDecoding(self, max_length, enc_in, device):
         self.eval()
         
@@ -282,6 +288,28 @@ class Transformer(nn.Module):
                 break
         
         return transcription[1:], (1 / p) ** (1 / len(transcription) - 1)
+    
+
+
+def build_model(config, ckpt, device, ddp=0, ddp_local_rank=0):
+    model = Transformer(config, device)
+    model.to(device)
+
+    if ckpt != 0:
+        try:
+            state_dict = torch.load(ckpt, map_location=device, weights_only=True)
+            model.load_state_dict({k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}, strict=True)
+            print("Model weights loaded succesfully")
+        except Exception as e:
+            print(f"Unable to load model weights: {e}")
+            assert False
+
+        if ddp:
+            model = DDP(model, device_ids=[ddp_local_rank])
+
+    return model
+
+
             
             
 

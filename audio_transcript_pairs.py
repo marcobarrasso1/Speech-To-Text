@@ -1,6 +1,7 @@
 import os
 import librosa
 import pickle
+from config import config
 
 def get_audio_transcript_pair(root_directory, max_duration, sr):
     data = []
@@ -32,11 +33,13 @@ def get_audio_transcript_pair(root_directory, max_duration, sr):
     
     return data
 
-root_dir = "data/LibriSpeech/train-clean-100"
-data = get_audio_transcript_pair(root_dir, 15, 16000)  
-test_data = get_audio_transcript_pair("data/LibriSpeech/test-clean", 15, 16000)                      
-print(len(data))
-print(len(test_data))
+
+data = get_audio_transcript_pair("data/LibriSpeech/train-clean-100", 15, 16000)  
+test_data = get_audio_transcript_pair("data/LibriSpeech/test-clean", 15, 16000)
+
+print(f"Number of samples in the training data: {len(data)}")
+print(f"Number of samples in the test data: {len(test_data)}")
+
 with open('data/audio_transcript_pairs.pkl', 'wb') as f:
     pickle.dump(data, f)  
     

@@ -1,17 +1,16 @@
 import torch 
 from torch.optim import Adam
 from torch.optim.lr_scheduler import LambdaLR
-import pickle
-from utils.data_loader import create_data_loader
-from config import config
-from utils.tokenizer import custom_encoding
-from model import Transformer
 import torch.nn.functional as F
-import time 
-import os
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+import pickle
 from config import config
+from data_loader import create_data_loader
+from tokenizer import custom_encoding
+from model import Transformer, build_model
+import time 
+import os
 
 
 ddp = int(os.environ.get('RANK', -1)) != -1
@@ -42,85 +41,63 @@ else:
         device = torch.device('cpu')
 
     ddp_rank = 0
+    ddp_local_rank = 0
     ddp_world_size = 1
     master_process = True
-    
-enc = custom_encoding()
+
+torch.set_float32_matmul_precision('high') 
+ckpt = 6750
+path = 'weights/model_enhanced_6750.pth'
+
+model = build_model(config, path, device, ddp, ddp_local_rank)
+model = torch.compile(model)
+
+if master_process:
+    print("Loaded model with a total of ", sum(p.numel() for p in model.parameters())/1e6, " M parameters")  
+
 
 with open('data/audio_transcript_pairs.pkl', 'rb') as f:
     pairs = pickle.load(f)
 
 
-data_loader_train, data_loader_val = create_data_loader(pairs, config, enc, ddp, ddp_world_size, ddp_rank)
+data_loader_train, data_loader_val = create_data_loader(pairs, config, ddp, ddp_world_size, ddp_rank)
 
 if master_process:
     print(f"Total number of batches in the train data: {len(data_loader_train)}\n", 
           f"Total number of batches in the test data: {len(data_loader_val)}")
 
 
-torch.set_float32_matmul_precision('high') 
-ckpt = 8500
 
-model = Transformer(config)
-model.to(device)
-model = torch.compile(model)
-
-load_ckpt = True
-if load_ckpt:
-    try:
-        state_dict = torch.load(f"weights/model_big_weights_iter_{ckpt}.pth", map_location=torch.device(device), weights_only=True)
-        model.load_state_dict({k.replace('module.', ''): v for k, v in state_dict.items()})
-        print("Model weights loaded succesfully")
-    except Exception as e:
-        print(f"Unable to load model weights: {e}")
-
-    if ddp:
-        model = DDP(model, device_ids=[ddp_local_rank])
+decay_rate = 0.01  
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
 
 
-#state_dict = torch.load('weights/model_weights_iter_100.pth', map_location=device)
-#model.load_state_dict(state_dict)
-#print("model paramaters loaded correctly")
-
-if master_process:
-    print(sum(p.numel() for p in model.parameters())/1e6, "M parameters")  
-
-
-decay_rate = 0.1  
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-6, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
-
-'''
 def lr_lambda(epoch):
-    return max(1e-5, torch.exp(torch.tensor(-decay_rate * epoch)))
-
+    return max(1e-4, torch.exp(torch.tensor(-decay_rate * epoch)))
 scheduler = LambdaLR(optimizer, lr_lambda)
-'''
 
-n_train = len(data_loader_train) * (ddp_world_size if ddp else 1)
-n_val = len(data_loader_val) 
+
 
 if master_process:
     from torch.utils.tensorboard import SummaryWriter
-    logdir = './results/log'
+    logdir = './results/log_enhanced_data'
     if not os.path.exists(logdir):
         os.makedirs(logdir)
     writer = SummaryWriter(logdir)
 
 
-
 model.train()
 global_step = ckpt
+
 for epoch in range(config.epochs):
     train_losses = []
     # val_losses = []
     
-    
-    #print(f"Learning Rate {scheduler.get_last_lr()[0]:.6f}")
     for i, batch in enumerate(data_loader_train):
 
         global_step += 1
         
-        ##if i % 250 == 0:
+        ##if i % 500 == 0:
         ##    model.eval()
         ##    val_loss = 0
             
@@ -158,7 +135,7 @@ for epoch in range(config.epochs):
 
         enc_input, dec_input, target = batch
         enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
-    
+
         #with torch.no_grad():
         #    if i % 50 == 0 and master_process:
         #        transcription, perplexity = model.GreedyDecoding(128, enc_input, device)
@@ -171,8 +148,6 @@ for epoch in range(config.epochs):
         target = target.view(B * T)
         
         loss = F.cross_entropy(logits, target, ignore_index=50259)
-        if master_process:
-            writer.add_scalar("Loss/Train", loss, global_step)
         
         optimizer.zero_grad()
         loss.backward()
@@ -182,22 +157,24 @@ for epoch in range(config.epochs):
         if ddp:
             train_loss_tensor = torch.tensor(loss, device=device)
             dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.AVG)
-            train_loss = train_loss_tensor.item()
+            loss = train_loss_tensor.item()
+        else:
+            loss = loss.item()
 
         torch.cuda.synchronize()
         end_time = time.time()
         batch_time = end_time - start_time    
 
         if master_process:
-            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(train_loss, 6)} | Elapsed {round(batch_time, 5)}")
-            writer.add_scalar("Loss / Train", train_loss, global_step)
+            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(loss, 6)} | Elapsed {round(batch_time, 5)}")
+            writer.add_scalar("Loss / Train", loss, global_step)
         
         if global_step % 250 == 0 and master_process:
-            model_path = f"weights/model_big_weights_iter_{global_step}.pth"
+            model_path = f"weights/model_enhanced_{global_step}.pth"
             torch.save(model.state_dict(), model_path)
             print(f"Model weights saved to {model_path}")
     
-    #scheduler.step()   
+    scheduler.step()   
 
 
 if ddp:
