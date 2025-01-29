@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
+from tokenizer import idx_2_str
 
 
 class MLP(nn.Module):
@@ -40,7 +41,7 @@ class MultiHeadAttention(nn.Module):
         self.value = nn.Linear(n_embd, n_embd)
         self.out = nn.Linear(n_embd, n_embd)
         
-    def forward(self, k, q, v, cross=False):
+    def forward(self, k, q, v, cross, mask):
         B, T, C = k.shape
         
         if cross:
@@ -57,7 +58,7 @@ class MultiHeadAttention(nn.Module):
         q = q.view(B, Tq, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, query_size, head_size)
         v = v.view(B, Tk, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, value_size, head_size)
         
-        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True if cross else False) #(B, nh, T, hs)
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=mask) #(B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, Tq, C) # (B, query_size, n_embd)
         
         y = self.out(y)
@@ -65,57 +66,111 @@ class MultiHeadAttention(nn.Module):
         return y
         
 
-class AttentionBlock(nn.Module):
-    def __init__(self, n_embd, n_head, cross=False):
+## class AttentionBlock(nn.Module):
+##     def __init__(self, n_embd, n_head, cross=False):
+##         super().__init__()
+        
+##         self.cross = cross
+##         self.attn = MultiHeadAttention(n_embd, n_head)
+##         self.ln1 = nn.LayerNorm(n_embd)
+        
+##         if self.cross:
+##             self.cross_att = MultiHeadAttention(n_embd, n_head) 
+##             self.ln2 = nn.LayerNorm(n_embd) 
+            
+##         self.mlp = MLP(n_embd)
+##         self.ln3 = nn.LayerNorm(n_embd)
+        
+##     def forward(self, k, q, v, mask=False):
+
+##         q_ = self.ln1(q)
+##         x = q + self.attn(q=q_, k=q_, v=q_, cross=self.cross, mask=mask)
+        
+##         if self.cross:
+##             x = x + self.cross_att(
+##             q=self.ln2(x), 
+##             k=k, 
+##             v=v, 
+##             cross=True,
+##             mask=False
+##             )
+            
+##         x = x + self.mlp(self.ln3(x))   
+        
+##         return x
+    
+
+
+class EncoderAttentionBlock(nn.Module):
+    def __init__(self, n_embd, n_head):
         super().__init__()
         
-        self.cross = cross
         self.attn = MultiHeadAttention(n_embd, n_head)
         self.ln1 = nn.LayerNorm(n_embd)
-        
-        if self.cross:
-            self.cross_att = MultiHeadAttention(n_embd, n_head) 
-            self.ln2 = nn.LayerNorm(n_embd) 
-            
         self.mlp = MLP(n_embd)
-        self.ln3 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
         
-    def forward(self, k, q, v):
-        x = self.ln1(q)
-        x = x + self.attn(q=x, k=x, v=x, cross=self.cross)
-        
-        if self.cross:
-            x = x + self.cross_att(
-            q=self.ln2(x), 
-            k=self.ln2(k), 
-            v=self.ln2(v), 
-            cross=True
-            )
-            
-        x = x + self.mlp(self.ln3(x))   
-        
+    def forward(self, k, q, v, mask=False):
+
+        q_ = self.ln1(q)
+        x = q + self.attn(q=q_, k=q_, v=q_, cross=False, mask=mask)
+        x = x + self.mlp(self.ln2(x))
         return x
     
 
+
+class DecoderAttentionBlock(nn.Module):
+    def __init__(self, n_embd, n_head):
+        super().__init__()
+        
+        self.attn = MultiHeadAttention(n_embd, n_head)
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.cross_att = MultiHeadAttention(n_embd, n_head)
+        self.ln2 = nn.LayerNorm(n_embd)
+        self.mlp = MLP(n_embd)
+        self.ln3 = nn.LayerNorm(n_embd)
+
+    def forward(self, k, q, v, mask=True):
+
+        q_ = self.ln1(q)
+        x = q + self.attn(q=q_, k=q_, v=q_, cross=False, mask=mask)
+        x = x + self.cross_att(
+            q=self.ln2(x), 
+            k=k, 
+            v=v, 
+            cross=True,
+            mask=False
+        )
+        x = x + self.mlp(self.ln3(x))
+        return x
+
+    
+
+    
 class Encoder(nn.Module):
-    def __init__(self, n_mels, n_layer, n_embd, n_head, device):
+    def __init__(self, n_mels, audio_len, n_layer, n_embd, n_head, device):
         super().__init__()
 
         self.device=device
         
-        self.conv1 = nn.Conv1d(n_mels, n_embd, kernel_size=3, padding=1, bias=False)
-        self.conv2 = nn.Conv1d(n_embd, n_embd, kernel_size=3, padding=1, bias=False)
+        self.conv1 = nn.Conv1d(n_mels, n_embd, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv1d(n_embd, n_embd, kernel_size=3, padding=1, stride=2)
+        self.adapool = nn.AdaptiveAvgPool1d(audio_len)
 
-        
-        self.blocks = nn.ModuleList(AttentionBlock(n_embd, n_head, cross=False) for _ in range (n_layer))
-        
+        self.blocks = nn.ModuleList(EncoderAttentionBlock(n_embd, n_head) for _ in range (n_layer))
         self.ln = nn.LayerNorm(n_embd)
         
     def forward(self, x):
-        x = x.permute(0, 2, 1) #x shape: (batch_size, n_mels, n_ctx)
-        x = F.gelu(self.conv1(x)) #(batch_size, n_embd, n_ctx)
-        x = F.gelu(self.conv2(x)) #(batch_size, n_embd, n_ctx)
-        x = x.permute(0, 2, 1) #(batch_size, n_ctx, n_embd)
+
+        conv_out = []
+        for spectre in x:
+            x = F.gelu(self.conv1(spectre.to(self.device)))
+            x = F.gelu(self.conv2(x))
+            x = self.adapool(x)
+            conv_out.append(x)
+            
+        x = torch.stack(conv_out, dim=0)
+        x = x.transpose(1, 2)
         
         B, N, D = x.shape
         x = (x + sinusoids(N, D).to(self.device).unsqueeze(0)).to(x.dtype)
@@ -135,13 +190,11 @@ class Decoder(nn.Module):
         self.token_embedding = nn.Embedding(vocab_size, n_embd)
         self.postitional_embedding = nn.Parameter(torch.zeros(n_ctx, n_embd))
         
-        self.blocks = nn.ModuleList(AttentionBlock(n_embd, n_head, cross=True) for _ in range (n_layer))
-        
+        self.blocks = nn.ModuleList(DecoderAttentionBlock(n_embd, n_head) for _ in range (n_layer))
         self.ln = nn.LayerNorm(n_embd)
         
     def forward(self, x, enc_out, inference=False):
         n_ctx = x.shape[1]
-        
         x = self.token_embedding(x) + self.postitional_embedding[:n_ctx]
         
         for block in self.blocks:
@@ -167,9 +220,11 @@ class Transformer(nn.Module):
         super().__init__()
 
         self.device = device
+        self.enc = config.enc
         
         self.encoder = Encoder(
             n_mels=config.n_mels,
+            audio_len=config.audio_len,
             n_layer=config.n_audio_layer,
             n_embd=config.n_audio_embd,
             n_head=config.n_audio_head,
@@ -190,7 +245,7 @@ class Transformer(nn.Module):
         
     def initialize_weights(self, m):
         if isinstance(m, nn.Linear):  # Apply only to linear layers
-            nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')  # Fan-in with ReLU
+            nn.init.xavier_normal_(m.weight, mode='fan_in', nonlinearity='relu')  # Fan-in with ReLU
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
         
@@ -258,48 +313,56 @@ class Transformer(nn.Module):
 
         return beam
     
+
     @torch.no_grad() 
-    def GreedyDecoding(self, max_length, enc_in, device):
+    def GreedyDecoding(self, max_length, enc_in, temperature=0, clean=False): #enc in must be list of spectrograms
+
         self.eval()
         
         eos = 50258
         sos = 50257
         
-        if enc_in.shape[0] != 1:
-            random_index = torch.randint(0, enc_in.size(0), (1,)).item()
-            enc_in = enc_in[random_index].unsqueeze(0)
-            
         enc_out = self.encoder(enc_in)
-        
-        transcription = [sos]
-        prod = 1
+        B, T, C = enc_out.shape
+
+        transcription = torch.tensor([sos for _ in range(B)], dtype=torch.long, device=self.device).reshape(B, 1)
+        prods = torch.ones(B, device=self.device)
         
         for i in range(max_length):
-            _ = torch.tensor([transcription], device=device)
-            logits = self.get_logits(_, enc_out)
+
+            logits = self.get_logits(transcription, enc_out)
             probs = F.softmax(logits, dim=-1)
-            p, prediction= torch.max(probs, dim=-1)
-            prod *= p 
-            #prediction = torch.argmax(probs, dim=-1)
-            
-            transcription.append(prediction.item())
-            
-            if prediction.item() == eos:
+            p, prediction = torch.max(probs, dim=-1)
+            prediction = prediction.reshape(B, 1)
+            if i > 0:
+                for j in range(B):
+                    if last_prediction[j] == eos:
+                        prediction[j] = eos
+            last_prediction = prediction
+            prods *= p 
+
+            transcription = torch.cat((transcription, prediction), dim=1)
+
+            if all(prediction[:, -1] == eos):
                 break
         
-        return transcription[1:], (1 / p) ** (1 / len(transcription) - 1)
+        return idx_2_str(transcription, self.enc, clean), (1 / prods) ** (1 / transcription.shape[1] - 1)
     
 
 
-def build_model(config, ckpt, device, ddp=0, ddp_local_rank=0):
+def build_model(config, device, ckpt=0, ddp=0, ddp_local_rank=0):
     model = Transformer(config, device)
     model.to(device)
 
     if ckpt != 0:
         try:
             state_dict = torch.load(ckpt, map_location=device, weights_only=True)
-            model.load_state_dict({k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}, strict=True)
+            if device == torch.device('cuda') or device == torch.device('cpu'):
+                model.load_state_dict({k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}, strict=True)
+            else:
+                model.load_state_dict({k.replace('module._orig_mod.', ''): v for k, v in state_dict.items()}, strict=True)
             print("Model weights loaded succesfully")
+
         except Exception as e:
             print(f"Unable to load model weights: {e}")
             assert False
@@ -308,35 +371,3 @@ def build_model(config, ckpt, device, ddp=0, ddp_local_rank=0):
             model = DDP(model, device_ids=[ddp_local_rank])
 
     return model
-
-
-            
-            
-
-        
-        
-        
-        
-        
-        
-            
-        
-        
-        
-        
-        
-    
-    
-        
-        
-        
-        
-        
-                
-        
-        
-    
-
-
-
-

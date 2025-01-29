@@ -12,20 +12,50 @@ def get_spectrogram_transcript_pair(data, config):
     for audio_path, transcript in data:
 
         transcript_encoding = config.enc.encode(transcript)
-        if len(transcript_encoding) > config.n_text_ctx:
+        if len(transcript_encoding) >= config.n_text_ctx:
             continue
 
         audio_data, _ = librosa.load(audio_path, sr=config.sr)
-        mel_spectrogram = librosa.feature.melspectrogram(
-            y=audio_data,
-            sr=config.sr,
-            n_fft=int(0.025 * config.sr),
-            hop_length=int(0.010 * config.sr),
-            n_mels=config.n_mels,
-            power=1
+        audio_tensor = torch.tensor(audio_data, dtype=torch.float32)
+        n_fft = 400
+        hop_length = 160
+        sr = 16000
+        n_mels = 80
+
+        window = torch.hann_window(n_fft)
+
+        stft = torch.stft(
+            audio_tensor, 
+            n_fft=n_fft, 
+            hop_length=hop_length, 
+            window=window, 
+            return_complex=True
         )
-        log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
-        log_mel_spectrogram = log_mel_spectrogram / (np.max(np.abs(log_mel_spectrogram)) + 1e-6)
+
+        magnitudes = stft.abs() ** 2
+
+        mel_filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
+        mel_filterbank = torch.tensor(mel_filterbank, dtype=torch.float32)
+
+        mel_spectrogram = mel_filterbank @ magnitudes
+
+        log_mel_spectrogram = torch.clamp(mel_spectrogram, min=1e-10).log10()
+
+        ## log_mel_spectrogram = torch.maximum(
+        ##     log_mel_spectrogram, log_mel_spectrogram.max() - 8.0
+        ## )
+        ## log_mel_spectrogram = (log_mel_spectrogram + 4.0) / 4.0
+
+##      mel_spectrogram = librosa.feature.melspectrogram(
+##             y=audio_data,
+##             sr=config.sr,
+##             n_fft=int(0.025 * config.sr),
+##             hop_length=int(0.010 * config.sr),
+##             n_mels=config.n_mels,
+##             power=1
+##         )
+##         log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
+##         log_mel_spectrogram = log_mel_spectrogram / (np.max(np.abs(log_mel_spectrogram)) + 1e-6)
 
         audio_length = log_mel_spectrogram.shape[1]
         if audio_length > config.max_duration or audio_length < config.min_duration:
@@ -40,11 +70,12 @@ def get_spectrogram_transcript_pair(data, config):
 
 
 def custom_collate_fn(batch):
-    encoder_inputs = [torch.tensor(item[0], dtype=torch.float32).transpose(0, 1) for item in batch]
+
+    encoder_inputs = [item[0] for item in batch]
     decoder_inputs = [torch.tensor(item[1], dtype=torch.long) for item in batch]
     targets = [torch.tensor(item[2], dtype=torch.long) for item in batch]
 
-    encoder_inputs = pad_sequence(encoder_inputs, batch_first=True, padding_value=0)
+    # encoder_inputs = pad_sequence(encoder_inputs, batch_first=True, padding_value=0)
     
     return encoder_inputs, torch.stack(decoder_inputs), torch.stack(targets)
 
@@ -63,9 +94,9 @@ class SpeechToTextDataset(Dataset):
     def __getitem__(self, index):
         log_mel_spectrogram, encoded_transcript = self.data[index]
         decoder_input = [self.sot_id] + encoded_transcript + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript))
-        decoder_output = encoded_transcript + [self.eot_id] + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript))
+        target = encoded_transcript + [self.eot_id] + [self.pad_id] * ((self.n_text_ctx - 1) - len(encoded_transcript))
 
-        return log_mel_spectrogram, decoder_input, decoder_output
+        return log_mel_spectrogram, decoder_input, target
 
 
 
@@ -75,9 +106,10 @@ def create_data_loader(data, config, ddp=False, ddp_world_size=None, ddp_rank=No
     pairs = get_spectrogram_transcript_pair(data, config)
 
     if test:
-        return DataLoader(pairs, config.batch_size, collate_fn=custom_collate_fn)
+        dataset = SpeechToTextDataset(pairs, config)
+        return DataLoader(dataset, config.batch_size, collate_fn=custom_collate_fn, shuffle=True)
  
-    train, val = train_test_split(pairs, test_size=0.1, random_state=42, shuffle=False)
+    train, val = train_test_split(pairs, test_size=0.1, random_state=42, shuffle=True)
 
     dataset_train = SpeechToTextDataset(train, config)
     dataset_val = SpeechToTextDataset(val, config)
@@ -91,7 +123,7 @@ def create_data_loader(data, config, ddp=False, ddp_world_size=None, ddp_rank=No
             batch_size=config.batch_size // ddp_world_size, 
             sampler=train_sampler,
             collate_fn=custom_collate_fn,
-            shuffle=False
+            shuffle=True
         )
         
         data_loader_val = DataLoader(
@@ -99,7 +131,7 @@ def create_data_loader(data, config, ddp=False, ddp_world_size=None, ddp_rank=No
             batch_size=config.batch_size // ddp_world_size, 
             sampler=val_sampler,
             collate_fn=custom_collate_fn,
-            shuffle=False
+            shuffle=True
         )
 
     else:
@@ -107,18 +139,20 @@ def create_data_loader(data, config, ddp=False, ddp_world_size=None, ddp_rank=No
             dataset_train, 
             batch_size=config.batch_size, 
             collate_fn=custom_collate_fn,
-            shuffle=False
+            shuffle=True
         )
         
         data_loader_val = DataLoader(
             dataset_val, 
             batch_size=config.batch_size, 
             collate_fn=custom_collate_fn,
-            shuffle=False
+            shuffle=True
         )
         
     print("Data Loader Built")
     return data_loader_train, data_loader_val
+
+
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import torch.distributed as dist
 import pickle
 from config import config
 from data_loader import create_data_loader
-from tokenizer import custom_encoding
+from tokenizer import custom_encoding, idx_2_str
 from model import Transformer, build_model
 import time 
 import os
@@ -46,11 +46,26 @@ else:
     master_process = True
 
 torch.set_float32_matmul_precision('high') 
-ckpt = 6750
-path = 'weights/model_enhanced_6750.pth'
+device = torch.device('cpu')
+ckpt = 0
+path = 0 # 'weights/model_enhanced_16750.pth'
 
-model = build_model(config, path, device, ddp, ddp_local_rank)
-model = torch.compile(model)
+model = build_model(config, device, path, ddp, ddp_local_rank)
+if device == torch.device('cuda'):
+    model = torch.compile(model)
+
+##logit_dist = model(torch.randn(1, config.n_mels, config.audio_len).to(device), torch.randint(0, 50259, (1, config.n_text_ctx)).to(device)).squeeze(0)
+
+##for temp_pred in logit_dist:
+##    print(max(temp_pred), min(temp_pred))
+
+###logit_dist = logit_dist.mean(dim=0)
+#### for temp_pred in logit_dist[0]:
+####     print(max(temp_pred), min(temp_pred))
+#### print(torch.argmax(logit_dist[0], dim=1))
+##from matplotlib import pyplot as plt
+##plt.hist(logit_dist[0].detach().cpu().numpy(), bins=10000)
+##plt.show()
 
 if master_process:
     print("Loaded model with a total of ", sum(p.numel() for p in model.parameters())/1e6, " M parameters")  
@@ -58,7 +73,6 @@ if master_process:
 
 with open('data/audio_transcript_pairs.pkl', 'rb') as f:
     pairs = pickle.load(f)
-
 
 data_loader_train, data_loader_val = create_data_loader(pairs, config, ddp, ddp_world_size, ddp_rank)
 
@@ -68,12 +82,12 @@ if master_process:
 
 
 
-decay_rate = 0.01  
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
+decay_rate = 0.001  
+optimizer = torch.optim.AdamW(model.parameters(), lr=5e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
 
 
 def lr_lambda(epoch):
-    return max(1e-4, torch.exp(torch.tensor(-decay_rate * epoch)))
+    return max(0.01, torch.exp(torch.tensor(-decay_rate * epoch)))
 scheduler = LambdaLR(optimizer, lr_lambda)
 
 
@@ -97,44 +111,11 @@ for epoch in range(config.epochs):
 
         global_step += 1
         
-        ##if i % 500 == 0:
-        ##    model.eval()
-        ##    val_loss = 0
-            
-        ##    with torch.no_grad():
-        ##        for val_batch in data_loader_val:
-        ##            enc_input, dec_input, target = val_batch
-        ##            enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
-                    
-        ##            logits = model(enc_input, dec_input)
-        ##            B, T, C = logits.shape
-                    
-        ##            logits = logits.view(B * T, C)
-        ##            target = target.view(B * T)
-
-        ##            loss = F.cross_entropy(logits, target, ignore_index=50259)
-        ##            val_loss += loss.item()
-
-        ##    if ddp:
-        ##        val_loss_tensor = torch.tensor(val_loss, device=device)
-        ##        dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM) # summing losses calculated by the different processes
-        ##        val_loss = val_loss_tensor.item()
-
-        ##    if master_process:
-        ##        avg_loss = val_loss / n_val
-
-                
-            
-        ##    val_loss = val_loss / len(data_loader_val)
-        ##    if master_process:
-        ##        writer.add_scalar('Loss/Val', val_loss, global_step)
-
-        ##    model.train()
-        
         start_time = time.time()
 
         enc_input, dec_input, target = batch
-        enc_input, dec_input, target = enc_input.to(device), dec_input.to(device), target.to(device)
+        dec_input, target = dec_input.to(device), target.to(device)
+        _target = target.clone().detach()
 
         #with torch.no_grad():
         #    if i % 50 == 0 and master_process:
@@ -147,34 +128,43 @@ for epoch in range(config.epochs):
         logits = logits.view(B * T, C)
         target = target.view(B * T)
         
-        loss = F.cross_entropy(logits, target, ignore_index=50259)
+        loss = F.cross_entropy(logits, target, ignore_index=50259, reduction='mean')
         
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         optimizer.step()
 
         if ddp:
-            train_loss_tensor = torch.tensor(loss, device=device)
-            dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.AVG)
-            loss = train_loss_tensor.item()
+            dist.all_reduce(loss, op=dist.ReduceOp.AVG)
+            loss = loss.item()
         else:
             loss = loss.item()
 
-        torch.cuda.synchronize()
+        if device == torch.device('cuda'):
+            torch.cuda.synchronize()
         end_time = time.time()
         batch_time = end_time - start_time    
 
         if master_process:
-            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(loss, 6)} | Elapsed {round(batch_time, 5)}")
+            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(loss, 6)} | Elapsed {round(batch_time, 5)}, | Lr {scheduler.get_last_lr()[0]}")
             writer.add_scalar("Loss / Train", loss, global_step)
+            if global_step % 50 == 1:
+                transcription, perplexity = model.GreedyDecoding(config.n_text_ctx, enc_input, device)
+                for i, (t, p) in enumerate(zip(idx_2_str(_target, config.enc, clean=True), transcription)):
+                    if i > 5:
+                        break
+                    
+                    print("Encoder input:", enc_input[i], "\n")
+                    print(f"Target: {t}\n\nPredicted: {p}\n")
+                    print("Perplexity: ", perplexity[i], "\n\n")
         
         if global_step % 250 == 0 and master_process:
             model_path = f"weights/model_enhanced_{global_step}.pth"
             torch.save(model.state_dict(), model_path)
             print(f"Model weights saved to {model_path}")
     
-    scheduler.step()   
+        scheduler.step()   
 
 
 if ddp:

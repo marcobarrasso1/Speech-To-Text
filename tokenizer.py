@@ -17,3 +17,18 @@ def custom_encoding():
 
     return enc
 
+
+
+def idx_2_str(batch_tokens, enc, clean=False):
+
+   batch_tokens = batch_tokens.tolist()
+   
+   decoded_strings = []
+   for tokens in batch_tokens:
+        decoded = enc.decode(tokens)
+        if clean:
+            decoded = decoded.replace("<sot>", "").replace("<eot>", "").replace("<pad>", "")
+        decoded_strings.append(decoded)
+
+   return decoded_strings
+
