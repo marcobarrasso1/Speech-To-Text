@@ -46,7 +46,7 @@ else:
     master_process = True
 
 torch.set_float32_matmul_precision('high') 
-device = torch.device('cpu')
+
 ckpt = 0
 path = 0 # 'weights/model_enhanced_16750.pth'
 
@@ -83,7 +83,7 @@ if master_process:
 
 
 decay_rate = 0.001  
-optimizer = torch.optim.AdamW(model.parameters(), lr=5e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.1)
 
 
 def lr_lambda(epoch):
@@ -147,21 +147,25 @@ for epoch in range(config.epochs):
         batch_time = end_time - start_time    
 
         if master_process:
-            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(loss, 6)} | Elapsed {round(batch_time, 5)}, | Lr {scheduler.get_last_lr()[0]}")
+            audio_info = model.get_enc_out(enc_input)
+            audio_info_var = torch.var(audio_info.view(audio_info.shape[0], -1), dim=0).mean().item()         
+            print(f"Iteration {i} | Epoch {epoch} | Global Step {global_step} | Loss {round(loss, 6)} | Elapsed {round(batch_time, 5)}, | Lr {scheduler.get_last_lr()[0]} | Audio Info Var {round(audio_info_var, 5)}")
             writer.add_scalar("Loss / Train", loss, global_step)
+            writer.add_scalar("Audio Info Variance", audio_info_var, global_step)
             if global_step % 50 == 1:
                 transcription, perplexity = model.GreedyDecoding(config.n_text_ctx, enc_input, device)
+                
                 for i, (t, p) in enumerate(zip(idx_2_str(_target, config.enc, clean=True), transcription)):
                     if i > 5:
                         break
                     
-                    print("Encoder input:", enc_input[i], "\n")
+                    print(model.get_enc_out(enc_input)[i])
                     print(f"Target: {t}\n\nPredicted: {p}\n")
                     print("Perplexity: ", perplexity[i], "\n\n")
         
         if global_step % 250 == 0 and master_process:
             model_path = f"weights/model_enhanced_{global_step}.pth"
-            torch.save(model.state_dict(), model_path)
+            # torch.save(model.state_dict(), model_path)
             print(f"Model weights saved to {model_path}")
     
         scheduler.step()   
