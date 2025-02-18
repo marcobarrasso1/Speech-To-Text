@@ -41,7 +41,7 @@ class MultiHeadAttention(nn.Module):
         self.value = nn.Linear(n_embd, n_embd)
         self.out = nn.Linear(n_embd, n_embd)
         
-    def forward(self, k, q, v, cross, mask):
+    def forward(self, k, q, v, cross, mask=False, pad_mask=None):
         B, T, C = k.shape
         
         if cross:
@@ -58,7 +58,11 @@ class MultiHeadAttention(nn.Module):
         q = q.view(B, Tq, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, query_size, head_size)
         v = v.view(B, Tk, self.n_head, self.head_size).transpose(1, 2) # (B, n_heads, value_size, head_size)
         
-        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=mask) #(B, nh, T, hs)
+        if pad_mask is not None:
+            pad_mask = pad_mask.unsqueeze(1).unsqueeze(1)
+            pad_mask = pad_mask.expand(B, self.n_head, Tq, Tk)
+
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=mask, attn_mask=pad_mask) #(B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, Tq, C) # (B, query_size, n_embd)
         
         y = self.out(y)
@@ -109,11 +113,12 @@ class EncoderAttentionBlock(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.mlp = MLP(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
+
         
-    def forward(self, k, q, v, mask=False):
+    def forward(self, k, q, v, pad_mask=False):
 
         q_ = self.ln1(q)
-        x = q + self.attn(q=q_, k=q_, v=q_, cross=False, mask=mask)
+        x = q + self.attn(q=q_, k=q_, v=q_, cross=False, mask=False, pad_mask=pad_mask)
         x = x + self.mlp(self.ln2(x))
         return x
     
@@ -148,14 +153,16 @@ class DecoderAttentionBlock(nn.Module):
 
     
 class Encoder(nn.Module):
-    def __init__(self, n_mels, audio_len, n_layer, n_embd, n_head, device):
+    def __init__(self, n_mels, hidden, n_layer, n_embd, n_head, device):
         super().__init__()
 
         self.device=device
+        self.hidden = hidden
+        self.register_buffer("positional_embedding", sinusoids(hidden, n_embd))
         
         self.conv1 = nn.Conv1d(n_mels, n_embd, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(n_embd, n_embd, kernel_size=3, padding=1, stride=2)
-        self.adapool = nn.AdaptiveAvgPool1d(audio_len)
+        # self.adapool = nn.AdaptiveAvgPool1d(audio_len)
 
         self.blocks = nn.ModuleList(EncoderAttentionBlock(n_embd, n_head) for _ in range (n_layer))
         self.ln = nn.LayerNorm(n_embd)
@@ -163,20 +170,34 @@ class Encoder(nn.Module):
     def forward(self, x):
 
         conv_out = []
+        masks = []
         for spectre in x:
             x = F.gelu(self.conv1(spectre.to(self.device)))
-            x = F.gelu(self.conv2(x))
-            x = self.adapool(x)
+            x = self.conv2(x)
+
+            length = x.shape[-1]
+            assert length <= self.hidden
+            pad_length = self.hidden - length
+
+            mask = torch.ones(length, dtype=torch.bool, device=self.device)
+            if pad_length > 0:
+                x = F.pad(x, (0, pad_length), value=0)
+                mask = F.pad(mask, (0, pad_length), value=0)
+
             conv_out.append(x)
+            masks.append(mask)
             
         x = torch.stack(conv_out, dim=0)
         x = x.transpose(1, 2)
+
+        mask = torch.stack(masks, dim=0)
         
         B, N, D = x.shape
-        x = (x + sinusoids(N, D).to(self.device).unsqueeze(0)).to(x.dtype)
+        
+        x = (x + self.positional_embedding).to(x.dtype)
         
         for block in self.blocks:
-            x = block(k=x, q=x, v=x)
+            x = block(k=x, q=x, v=x, pad_mask=mask)
             
         x = self.ln(x)
         
@@ -224,10 +245,10 @@ class Transformer(nn.Module):
         
         self.encoder = Encoder(
             n_mels=config.n_mels,
-            audio_len=config.audio_len,
             n_layer=config.n_audio_layer,
             n_embd=config.n_audio_embd,
             n_head=config.n_audio_head,
+            hidden=config.encoder_hidden,
             device=device
         )
         
