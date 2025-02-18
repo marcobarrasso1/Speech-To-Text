@@ -47,13 +47,11 @@ def collate_fn(batch):
     transcripts = [item[1] for item in batch]
 
     _ = processor.tokenizer(transcripts, padding=True, return_tensors="pt")
-    labels = _.input_ids
-    decoder_attention_mask = _.attention_mask
+    labels = _.input_ids.masked_fill(_.attention_mask.ne(1), -100)
 
     return {
-        "input_features": input_features,
-        "labels": labels,
-        "decoder_attention_mask": decoder_attention_mask,
+        "input_features": input_features, 
+        "labels": labels 
     }
 
 
@@ -90,12 +88,10 @@ for epoch in range(num_epochs):
     for batch in loop:
         input_features = batch["input_features"].to(device)
         labels = batch["labels"].to(device)
-        decoder_attention_mask = batch["decoder_attention_mask"].to(device)
 
         outputs = model(
             input_features=input_features,
-            labels=labels,
-            decoder_attention_mask=decoder_attention_mask
+            labels=labels
             )
         loss = outputs.loss
 
