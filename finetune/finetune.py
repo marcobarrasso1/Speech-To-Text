@@ -5,12 +5,12 @@ from transformers import (
 )
 import torch
 import os
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from transformers import get_scheduler
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from evaluation import compute_wer
+from utils import *
 
 
 train = load_dataset("facebook/multilingual_librispeech", "italian", split="train")
@@ -32,42 +32,16 @@ else:
 
 print(f"Using device: {device}")
 
-class WhisperDataset(Dataset):
-    def __init__(self, dataset):
-        self.dataset = dataset
-        self.processor = processor
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        batch = self.dataset[idx]
-        return (batch["audio"]["array"], batch["transcript"])
-
-
-def collate_fn(batch):
-    input_features = torch.stack([processor.feature_extractor(item[0], sampling_rate=16000, return_tensors="pt").input_features for item in batch]).squeeze(1)
-    transcripts = [item[1] for item in batch]
-
-    _ = processor.tokenizer(transcripts, padding=True, return_tensors="pt")
-    labels = _.input_ids.masked_fill(_.attention_mask.ne(1), -100)
-
-    return {
-        "input_features": input_features,
-        "labels": labels 
-    }
-
-
-dataset_train = WhisperDataset(train)
-dataset_test = WhisperDataset(test)
-dataloader_train = DataLoader(dataset_train, batch_size=32, shuffle=True, collate_fn=collate_fn)
-dataloader_test = DataLoader(dataset_test, batch_size=32, shuffle=True, collate_fn=collate_fn)
+dataset_train = WhisperDataset(train, processor)
+dataset_test = WhisperDataset(test, processor)
+dataloader_train = DataLoader(dataset_train, batch_size=2, shuffle=True, collate_fn=dataset_train.collate_fn)
+dataloader_test = DataLoader(dataset_test, batch_size=2, shuffle=True, collate_fn=dataset_test.collate_fn)
 print(f"Built train dataloader, len: {len(dataloader_train)}")
-print(f"Built test dataloader, len: {len(dataloader_train)}")
+print(f"Built test dataloader, len: {len(dataloader_test)}")
 
 
 model.to(device)
-model = torch.compile(model)
+#model = torch.compile(model)
 torch.set_float32_matmul_precision('high')
 optimizer = AdamW(model.parameters(), lr=1e-5)
 num_epochs = 1
