@@ -3,24 +3,27 @@ import torch
 import string
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import numpy as np
 
 @torch.no_grad()    
 def compute_wer(dataloader, model, processor, device):
     
     model.eval()
-    wer = 0
+    wer = []
+    wer_normalized = []
     
     for i, batch in enumerate(tqdm(dataloader, leave=True)):
-        print("oo")
         input_features = batch["input_features"].to(device)
         ground_truth = processor.batch_decode(batch["labels"], skip_special_tokens=True)
 
         predicted_ids = model.generate(input_features)
         transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)
-        transcription = [item.strip().lower().translate(str.maketrans("", "", string.punctuation)) for item in transcription]
+        transcription_normalized = [item.strip().lower().translate(str.maketrans("", "", string.punctuation)) for item in transcription]
         
-        wer = wer * i / (i + 1) + jiwer.wer(ground_truth, transcription) / (i + 1)
-    return wer
+        #wer = wer * i / (i + 1) + jiwer.wer(ground_truth, transcription) / (i + 1)
+        wer = wer.append(jiwer.wer(ground_truth, transcription))
+        wer_normalized.append(jiwer.wer(ground_truth, transcription_normalized))
+    return np.mean(wer), np.mean(wer_normalized)
         
 
 class WhisperDataset(Dataset):

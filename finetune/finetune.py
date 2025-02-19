@@ -23,6 +23,7 @@ model = WhisperForConditionalGeneration.from_pretrained(model_name)
 print("Built model")
 
 
+
 if torch.cuda.is_available():
     device = "cuda"
 elif torch.backends.mps.is_available():
@@ -41,7 +42,22 @@ print(f"Built test dataloader, len: {len(dataloader_test)}")
 
 
 model.to(device)
-#model = torch.compile(model)
+model = torch.compile(model)
+
+lora = True
+if lora:
+    from peft import get_peft_model, LoraConfig, TaskType
+    lora_config = LoraConfig(
+    task_type=TaskType.SEQ_2_SEQ_LM,  # Whisper is a seq2seq model
+    r=32,  # Low-rank dimension (higher = more capacity, but more VRAM)
+    lora_alpha=64,  # Scaling factor
+    lora_dropout=0.1,  # Dropout for stability
+    target_modules=["q_proj", "v_proj"]  # Apply LoRA to attention layers
+)
+
+
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
 torch.set_float32_matmul_precision('high')
 optimizer = AdamW(model.parameters(), lr=1e-5)
 num_epochs = 1
@@ -60,6 +76,7 @@ if not os.path.exists(logdir):
 writer = SummaryWriter(logdir)
 
 wer_before = compute_wer(dataloader_test, model, processor, device)
+print(f"WER before fine-tuning: {wer_before[0]}, Normalized WER before fine-tuning: {wer_before[1]}")
 
 model.train()
 
@@ -86,5 +103,8 @@ for epoch in range(num_epochs):
         loop.set_postfix(loss=loss.item())
     
 wer_after = compute_wer(dataloader_test, model, processor, device)
+print(f"WER after fine-tuning: {wer_before[0]}, Normalized WER after fine-tuning: {wer_before[1]}")
 
-    
+model.save_pretrained("whisper_finetuned")
+processor.save_pretrained("whisper_finetuned")
+print("Model saved")
