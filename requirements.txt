@@ -6,3 +6,4 @@ jiwer
 transformers
 datasets
 peft
+tensorboard
