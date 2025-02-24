@@ -15,8 +15,8 @@ from parser import get_args
 
 args = get_args()
 
-train = load_dataset("facebook/multilingual_librispeech", "italian", split="train")
-test = load_dataset("facebook/multilingual_librispeech", "italian", split="test")
+train = load_dataset("facebook/multilingual_librispeech", "italian", split="train[:2]")
+test = load_dataset("facebook/multilingual_librispeech", "italian", split="test[:2]")
 print("Loaded data from Huggingface")
 
 model_name = f"openai/{args.model_name}"
@@ -35,8 +35,8 @@ print(f"Using device: {device}")
 
 dataset_train = WhisperDataset(train, processor)
 dataset_test = WhisperDataset(test, processor)
-dataloader_train = DataLoader(dataset_train, batch_size=8, shuffle=True, collate_fn=dataset_train.collate_fn)
-dataloader_test = DataLoader(dataset_test, batch_size=8, shuffle=True, collate_fn=dataset_test.collate_fn)
+dataloader_train = DataLoader(dataset_train, batch_size=2, shuffle=True, collate_fn=dataset_train.collate_fn, drop_last=True)
+dataloader_test = DataLoader(dataset_test, batch_size=2, shuffle=True, collate_fn=dataset_test.collate_fn, drop_last=True)
 print(f"Built train dataloader, len: {len(dataloader_train)}")
 print(f"Built test dataloader, len: {len(dataloader_test)}")
 
@@ -53,13 +53,13 @@ if args.lora:
     target_modules=["q_proj", "v_proj"]
 )
 
-
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     
 torch.set_float32_matmul_precision('high')
 optimizer = AdamW(model.parameters(), lr=1e-3)
-num_epochs = 1
+num_epochs = 2
+global_step = 1
 num_training_steps = len(dataloader_train) * num_epochs
 
 lr_scheduler = get_scheduler(
@@ -75,8 +75,8 @@ if not os.path.exists(logdir):
     os.makedirs(logdir)
 writer = SummaryWriter(logdir)
 
-#wer_before = compute_wer(dataloader_test, model, processor, device)
-#print(f"WER before fine-tuning: {wer_before[0]}, Normalized WER before fine-tuning: {wer_before[1]}")
+wer_before = compute_wer(dataloader_test, model, processor, device)
+print(f"WER before fine-tuning: {wer_before[0]}, Normalized WER before fine-tuning: {wer_before[1]}")
 
 model.train()
 
@@ -92,7 +92,7 @@ for epoch in range(num_epochs):
             labels=labels
             )
         loss = outputs.loss
-        writer.add_scalar("Loss / Train", loss, i)
+        writer.add_scalar("Loss / Train", loss, global_step)
 
         optimizer.zero_grad()
         loss.backward()
@@ -101,10 +101,14 @@ for epoch in range(num_epochs):
 
         loop.set_description(f"Epoch {epoch+1}/{num_epochs}")
         loop.set_postfix(loss=loss.item())
+        global_step += 1
     
 wer_after = compute_wer(dataloader_test, model, processor, device)
 print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
 
-model.save_pretrained(f"whisper_finetuned_lora_{args.lora}")
-processor.save_pretrained(f"whisper_finetuned_lora_{args.lora}")
+with open("results/wer.txt", "a") as f:
+    f.write(f"{args.model_name}, {args.lora}, {wer_before[0]}, {wer_before[1]}, {wer_after[0]}, {wer_after[1]}\n")
+    
+model.save_pretrained(f"weights/whisper_finetuned_lora_{args.lora}")
+processor.save_pretrained(f"weigths/whisper_finetuned_lora_{args.lora}")
 print("Model saved")

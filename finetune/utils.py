@@ -20,9 +20,9 @@ def compute_wer(dataloader, model, processor, device):
         transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)
         transcription_normalized = [item.strip().lower().translate(str.maketrans("", "", string.punctuation)) for item in transcription]
         
-        #wer = wer * i / (i + 1) + jiwer.wer(ground_truth, transcription) / (i + 1)
-        wer = wer.append(jiwer.wer(ground_truth, transcription))
+        wer.append(jiwer.wer(ground_truth, transcription))
         wer_normalized.append(jiwer.wer(ground_truth, transcription_normalized))
+        
     return np.mean(wer), np.mean(wer_normalized)
         
 
