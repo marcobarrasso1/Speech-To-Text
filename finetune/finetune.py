@@ -110,4 +110,4 @@ wer_after = compute_wer(dataloader_test, model, processor, device)
 print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
 
 with open("results/wer.txt", "a") as f:
-    f.write(f"{args.model_name}, {args.lora}, {wer_before[0]}, {wer_before[1]}, {wer_after[0]}, {wer_after[1]}\n")
+    f.write(f"{args.model_name}, {args.lora}, {wer_after[0]}, {wer_after[1]}\n")
