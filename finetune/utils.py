@@ -16,7 +16,7 @@ def compute_wer(dataloader, model, processor, device):
         input_features = batch["input_features"].to(device)
         ground_truth = processor.batch_decode(batch["labels"], skip_special_tokens=True)
 
-        predicted_ids = model.generate(input_features)
+        predicted_ids = model.generate(input_features.to(torch.bfloat16))
         transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)
         transcription_normalized = [item.strip().lower().translate(str.maketrans("", "", string.punctuation)) for item in transcription]
         

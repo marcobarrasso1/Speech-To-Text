@@ -21,7 +21,7 @@ print("Loaded data from Huggingface")
 
 model_name = f"openai/{args.model_name}"
 processor = WhisperProcessor.from_pretrained(model_name)
-model = WhisperForConditionalGeneration.from_pretrained(model_name)
+model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype="bfloat16")
 print("Built model")
 
 if torch.cuda.is_available():
@@ -35,8 +35,8 @@ print(f"Using device: {device}")
 
 dataset_train = WhisperDataset(train, processor)
 dataset_test = WhisperDataset(test, processor)
-dataloader_train = DataLoader(dataset_train, batch_size=2, shuffle=True, collate_fn=dataset_train.collate_fn)
-dataloader_test = DataLoader(dataset_test, batch_size=2, shuffle=True, collate_fn=dataset_test.collate_fn)
+dataloader_train = DataLoader(dataset_train, batch_size=96, shuffle=True, collate_fn=dataset_train.collate_fn)
+dataloader_test = DataLoader(dataset_test, batch_size=96, shuffle=True, collate_fn=dataset_test.collate_fn)
 print(f"Built train dataloader, len: {len(dataloader_train)}")
 print(f"Built test dataloader, len: {len(dataloader_test)}")
 
@@ -56,7 +56,7 @@ if args.lora:
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     
-torch.set_float32_matmul_precision('high')
+#torch.set_float32_matmul_precision('high')
 optimizer = AdamW(model.parameters(), lr=1e-3)
 num_epochs = 2
 global_step = 1
@@ -75,8 +75,8 @@ if not os.path.exists(logdir):
     os.makedirs(logdir)
 writer = SummaryWriter(logdir)
 
-wer_before = compute_wer(dataloader_test, model, processor, device)
-print(f"WER before fine-tuning: {wer_before[0]}, Normalized WER before fine-tuning: {wer_before[1]}")
+#wer_before = compute_wer(dataloader_test, model, processor, device)
+#print(f"WER before fine-tuning: {wer_before[0]}, Normalized WER before fine-tuning: {wer_before[1]}")
 
 model.train()
 
@@ -88,7 +88,7 @@ for epoch in range(num_epochs):
         labels = batch["labels"].to(device)
 
         outputs = model(
-            input_features=input_features,
+            input_features=input_features.to(torch.bfloat16),
             labels=labels
             )
         loss = outputs.loss
@@ -103,11 +103,11 @@ for epoch in range(num_epochs):
         loop.set_postfix(loss=loss.item())
         global_step += 1
     
+model.save_pretrained(f"weights/{args.model_name}_lora_{args.lora}")
+print("Model saved")
+
 wer_after = compute_wer(dataloader_test, model, processor, device)
 print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
 
 with open("results/wer.txt", "a") as f:
     f.write(f"{args.model_name}, {args.lora}, {wer_before[0]}, {wer_before[1]}, {wer_after[0]}, {wer_after[1]}\n")
-    
-model.save_pretrained(f"weights/{args.model_name}_lora_{args.lora}")
-print("Model saved")
