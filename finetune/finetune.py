@@ -15,8 +15,8 @@ from parser import get_args
 
 args = get_args()
 
-train = load_dataset("facebook/multilingual_librispeech", "italian", split="train[:2]")
-test = load_dataset("facebook/multilingual_librispeech", "italian", split="test[:2]")
+train = load_dataset("facebook/multilingual_librispeech", "italian", split="train")
+test = load_dataset("facebook/multilingual_librispeech", "italian", split="test")
 print("Loaded data from Huggingface")
 
 model_name = f"openai/{args.model_name}"
@@ -35,8 +35,8 @@ print(f"Using device: {device}")
 
 dataset_train = WhisperDataset(train, processor)
 dataset_test = WhisperDataset(test, processor)
-dataloader_train = DataLoader(dataset_train, batch_size=2, shuffle=True, collate_fn=dataset_train.collate_fn, drop_last=True)
-dataloader_test = DataLoader(dataset_test, batch_size=2, shuffle=True, collate_fn=dataset_test.collate_fn, drop_last=True)
+dataloader_train = DataLoader(dataset_train, batch_size=2, shuffle=True, collate_fn=dataset_train.collate_fn)
+dataloader_test = DataLoader(dataset_test, batch_size=2, shuffle=True, collate_fn=dataset_test.collate_fn)
 print(f"Built train dataloader, len: {len(dataloader_train)}")
 print(f"Built test dataloader, len: {len(dataloader_test)}")
 
