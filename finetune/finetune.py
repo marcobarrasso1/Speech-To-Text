@@ -42,7 +42,7 @@ print(f"Built test dataloader, len: {len(dataloader_test)}")
 
 
 model.to(device)
-#model = torch.compile(model)
+model = torch.compile(model)
 
 if args.lora:
     from peft import get_peft_model, LoraConfig, TaskType
