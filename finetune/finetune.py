@@ -109,6 +109,5 @@ print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning:
 with open("results/wer.txt", "a") as f:
     f.write(f"{args.model_name}, {args.lora}, {wer_before[0]}, {wer_before[1]}, {wer_after[0]}, {wer_after[1]}\n")
     
-model.save_pretrained(f"weights/whisper_finetuned_lora_{args.lora}")
-processor.save_pretrained(f"weigths/whisper_finetuned_lora_{args.lora}")
+model.save_pretrained(f"weights/{args.model_name}_lora_{args.lora}")
 print("Model saved")
