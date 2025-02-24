@@ -65,7 +65,7 @@ num_training_steps = len(dataloader_train) * num_epochs
 lr_scheduler = get_scheduler(
     "linear",
     optimizer=optimizer,
-    num_warmup_steps=0,
+    num_warmup_steps=50,
     num_training_steps=num_training_steps,
 )
 
