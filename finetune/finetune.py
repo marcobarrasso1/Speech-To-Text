@@ -57,19 +57,19 @@ if args.lora:
     model.print_trainable_parameters()
     
 #torch.set_float32_matmul_precision('high')
-optimizer = AdamW(model.parameters(), lr=1e-5)
+optimizer = AdamW(model.parameters(), lr=1e-3)
 num_epochs = 2
 global_step = 1
 num_training_steps = len(dataloader_train) * num_epochs
 
 lr_scheduler = get_scheduler(
-    "constant",
+    "linear",
     optimizer=optimizer,
-    num_warmup_steps=0,
+    num_warmup_steps=50,
     num_training_steps=num_training_steps,
 )
 
-logdir = f"./results/{args.model_name}_lora_{args.lora}"
+logdir = f"./results/{args.model_name}_lora_linear_{args.lora}"
 print(logdir)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
@@ -103,11 +103,11 @@ for epoch in range(num_epochs):
         loop.set_postfix(loss=loss.item())
         global_step += 1
     
-model.save_pretrained(f"weights/{args.model_name}_lora_{args.lora}")
+model.save_pretrained(f"weights/{args.model_name}_lora_linear_{args.lora}")
 print("Model saved")
 
 wer_after = compute_wer(dataloader_test, model, processor, device)
 print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
 
 with open("results/wer.txt", "a") as f:
-    f.write(f"{args.model_name}, {args.lora}, {wer_after[0]}, {wer_after[1]}\n")
+    f.write(f"{args.model_name}, {args.lora_linear}, {wer_after[0]}, {wer_after[1]}\n")
