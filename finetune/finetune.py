@@ -35,8 +35,8 @@ print(f"Using device: {device}")
 
 dataset_train = WhisperDataset(train, processor)
 dataset_test = WhisperDataset(test, processor)
-dataloader_train = DataLoader(dataset_train, batch_size=96, shuffle=True, collate_fn=dataset_train.collate_fn)
-dataloader_test = DataLoader(dataset_test, batch_size=96, shuffle=True, collate_fn=dataset_test.collate_fn)
+dataloader_train = DataLoader(dataset_train, batch_size=82, shuffle=True, collate_fn=dataset_train.collate_fn)
+dataloader_test = DataLoader(dataset_test, batch_size=82, shuffle=True, collate_fn=dataset_test.collate_fn)
 print(f"Built train dataloader, len: {len(dataloader_train)}")
 print(f"Built test dataloader, len: {len(dataloader_test)}")
 
@@ -65,11 +65,11 @@ num_training_steps = len(dataloader_train) * num_epochs
 lr_scheduler = get_scheduler(
     "linear",
     optimizer=optimizer,
-    num_warmup_steps=50,
+    num_warmup_steps=0,
     num_training_steps=num_training_steps,
 )
 
-logdir = f"./results/{args.model_name}_lora_linear_{args.lora}"
+logdir = f"./results/{args.model_name}_lora_{args.lora}"
 print(logdir)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
@@ -103,11 +103,11 @@ for epoch in range(num_epochs):
         loop.set_postfix(loss=loss.item())
         global_step += 1
     
-model.save_pretrained(f"weights/{args.model_name}_lora_linear_{args.lora}")
+model.save_pretrained(f"weights/{args.model_name}_lora_{args.lora}")
 print("Model saved")
 
 wer_after = compute_wer(dataloader_test, model, processor, device)
 print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
 
 with open("results/wer.txt", "a") as f:
-    f.write(f"{args.model_name}, {args.lora_linear}, {wer_after[0]}, {wer_after[1]}\n")
+    f.write(f"{args.model_name}, {args.lora}, {wer_after[0]}, {wer_after[1]}\n")
