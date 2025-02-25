@@ -57,15 +57,15 @@ if args.lora:
     model.print_trainable_parameters()
     
 #torch.set_float32_matmul_precision('high')
-optimizer = AdamW(model.parameters(), lr=1e-3)
+optimizer = AdamW(model.parameters(), lr=1e-5)
 num_epochs = 2
 global_step = 1
 num_training_steps = len(dataloader_train) * num_epochs
 
 lr_scheduler = get_scheduler(
-    "linear",
+    "constant",
     optimizer=optimizer,
-    num_warmup_steps=50,
+    num_warmup_steps=0,
     num_training_steps=num_training_steps,
 )
 
