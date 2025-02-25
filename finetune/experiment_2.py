@@ -23,7 +23,6 @@ print("Loaded data from Huggingface")
 
 model_name = f"openai/whisper-tiny.en"
 processor = WhisperProcessor.from_pretrained(model_name)
-model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype="bfloat16")
 print("Built model")
 
 if torch.cuda.is_available():
@@ -42,12 +41,11 @@ dataloader_test = DataLoader(dataset_test, batch_size=96, shuffle=True, collate_
 print(f"Built train dataloader, len: {len(dataloader_train)}")
 print(f"Built test dataloader, len: {len(dataloader_test)}")
 
-
-model.to(device)
-model = torch.compile(model)
-
-
-for rank in [16, 32, 64, 128]:
+for rank in [16, 64, 128]:
+    
+    model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype="bfloat16")
+    model.to(device)
+    model = torch.compile(model)
 
     lora_config = LoraConfig(
     r=rank,  
@@ -107,3 +105,9 @@ for rank in [16, 32, 64, 128]:
         
     model.save_pretrained(f"weights/whisper-tiny.en_lora_{rank}_exp2")
     print("Model saved")
+    
+    wer_after = compute_wer(dataloader_test, model, processor, device)
+    print(f"WER after fine-tuning: {wer_after[0]}, Normalized WER after fine-tuning: {wer_after[1]}")
+
+    with open("results/wer.txt", "a") as f:
+        f.write(f"{args.model_name}, {args.lora}{rank}, {wer_after[0]}, {wer_after[1]}\n")
