@@ -46,7 +46,8 @@ for rank in [16, 64, 128]:
     model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype="bfloat16")
     model.to(device)
     model = torch.compile(model)
-
+    
+    torch.set_float32_matmul_precision('high')
     lora_config = LoraConfig(
     r=rank,  
     lora_alpha=64, 
