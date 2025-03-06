@@ -23,6 +23,10 @@ From the first plot we can notice that bigger models lead to better results and 
 
 <img src="finetune/results/plot1.png" alt="Model Config" width="600">
 
+We also evaluate the performance of the models on English after being fine-tuned on italian to see the capabilities of remebering the language. We noticed that the bigger the model is,the better it preserves its memory about past information. The fully fine-tuned model seems to perform worse than its LoRA counterpart.
+
+<img src="finetune/results/plot2.png" alt="Model Config" width="600">
+
 
 
 
