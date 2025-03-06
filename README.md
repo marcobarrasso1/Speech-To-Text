@@ -27,7 +27,7 @@ We also evaluate the performance of the models on English after being fine-tuned
 
 <img src="finetune/results/plo2.png" alt="Model Config" width="600">
 
-Lastly we evaluated the performance for different LoRA rank while also changing decoding strategy between greedy decoding and beam search. Beam search outperforms greedy decoding at the expense of a higher computational cost(during inference it was almost 30% slower), higher LoRA rankleads to better results with apparently diminishing returns.
+Lastly we evaluated the performance for different LoRA rank while also changing decoding strategy between greedy decoding and beam search. Beam search outperforms greedy decoding at the expense of a higher computational cost (during inference it was almost 30% slower), higher LoRA rank leads to better results with apparently diminishing returns.
 
 
 
