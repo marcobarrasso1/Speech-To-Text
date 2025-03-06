@@ -19,6 +19,10 @@ Word Error Rate was used as evaluation metric.
 
 ## Results
 
+From the first plot we can notice that bigger models lead to better results and also that fully fine-tuned tiny model is comparablewith the LoRA fine-tuning of the small model where the number of trainable parameter was much smaller.
+
+<img src="finetune/results/plot1.png" alt="Model Config" width="500">
+
 
 
 
