@@ -14,11 +14,7 @@ We decided to fine-tune the first three english models (Tiny, Base, Small) propo
 <img src="finetune/results/model_size.png" alt="Model Config" width="500">
 
 The train data consists of the Italian section of the Multilingual LibriSpeech (MLS) dataset that consists of more than 250 hours of audio and was performed on a NVIDIA RTX 4090.
-Word Error Rate was used as evaluation metric:
-
-$$
-\text{WER} = \frac{S + D + I}{N}
-$$
+Word Error Rate was used as evaluation metric.
 
 
 
