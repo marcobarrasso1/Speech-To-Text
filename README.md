@@ -3,5 +3,18 @@ The first idea for the project was to recreate the architecture of OpenAI Wisper
 After our initial attempt, we decided to take a different approach. Instead of training from scratch, we opted to fine-tune the English-only Whisper model on Italian to evaluate its performance on a new language. Everything related to this can be found in the [finetune](finetune) directory.
 
 
+## Dependencies
+```
+pip install -r requirements.txt
+```
 
+* pytorch
+* tiktoken
+* librosa
+* numpy
+* jiwer
+* transformers
+* dataset
+* peft
+* tensorboard
 
