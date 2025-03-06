@@ -8,13 +8,7 @@ After our initial attempt, we decided to take a different approach. Instead of t
 pip install -r requirements.txt
 ```
 
-* pytorch
-* tiktoken
-* librosa
-* numpy
-* jiwer
-* transformers
-* dataset
-* peft
-* tensorboard
+## Fine-Tuning
+We decided to fine-tune the first three english models proposed by the authors of the paper using LoRA(Low-Rank Adaptation) and also to fully fine-tune the smallest model to see the difference between the 2 approaches. 
+
 
