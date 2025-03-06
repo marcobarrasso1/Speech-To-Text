@@ -11,4 +11,6 @@ pip install -r requirements.txt
 ## Fine-Tuning
 We decided to fine-tune the first three english models proposed by the authors of the paper using LoRA(Low-Rank Adaptation) and also to fully fine-tune the smallest model to see the difference between the 2 approaches. 
 
+![Model Config](finetune/results/model_size.png)
+
 
